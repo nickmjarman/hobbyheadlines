@@ -105,7 +105,7 @@ ${clipped}
 
 // Insert into Supabase
 async function insertArticle(row) {
-  const res = await fetch(`${https://egurwvorcvczcuuiiwgm.supabase.co}/rest/v1/articles`, {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/articles`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
