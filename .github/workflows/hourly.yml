@@ -16,9 +16,22 @@ jobs:
         with:
           node-version: "20"
 
-      - run: npm install
+      # DEBUG: show where we are and what files exist
+      - name: Debug workspace
+        run: |
+          echo "PWD=$(pwd)"
+          echo "GITHUB_WORKSPACE=${GITHUB_WORKSPACE}"
+          ls -la
+          ls -la "${GITHUB_WORKSPACE}"
 
-      - run: node index.js
+      # FORCE running in repo root
+      - name: Install dependencies
+        run: npm install
+        working-directory: ${{ github.workspace }}
+
+      - name: Run worker
+        run: node index.js
+        working-directory: ${{ github.workspace }}
         env:
           BRAVE_API_KEY: ${{ secrets.BRAVE_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
