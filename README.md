@@ -1,11 +1,2 @@
-{
-  "name": "tc-news-bot",
-  "type": "module",
-  "dependencies": {
-    "@mozilla/readability": "^0.5.0",
-    "jsdom": "^24.0.0",
-    "node-fetch": "^3.3.2",
-    "openai": "^4.0.0"
-  }
-}
 
+Automated trading card news aggregator
