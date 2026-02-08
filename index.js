@@ -106,14 +106,21 @@ ${clipped}
 // Insert into Supabase
 async function insertArticle(row) {
   const res = await fetch(`${SUPABASE_URL}/rest/v1/articles`, {
-  method: "POST",
-  headers: {
-    "Content-Type": "application/json",
-    apikey: SUPABASE_SERVICE_ROLE_KEY,
-    Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
-    Prefer: "return=minimal"
-  },
-  body: JSON.stringify(row)
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "apikey": SUPABASE_SERVICE_ROLE_KEY,
+      "Authorization": `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+      "Prefer": "return=minimal"
+    },
+    body: JSON.stringify(row)
+  });
+
+  if (res.status === 409) return false; // duplicate URL
+  if (!res.ok) throw new Error(await res.text());
+  return true;
+}
+
 });
 
 }
