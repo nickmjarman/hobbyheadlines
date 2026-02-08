@@ -64,5 +64,88 @@ async function extract(url) {
 }
 
 async function summarize(title, text) {
-  const clip
+  const clipped = text.slice(0, 9000);
 
+  const prompt = `Return STRICT JSON with keys summary,snippet,tags.
+summary: 1-2 neutral sentences.
+snippet: 8-15 words.
+tags: 3-6 tags.
+
+Title: ${title}
+
+Article:
+${clipped}`;
+
+  const resp = await openai.chat.completions.create({
+    model: "gpt-4o-mini",
+    temperature: 0.3,
+    messages: [{ role: "user", content: prompt }]
+  });
+
+  const raw = resp?.choices?.[0]?.message?.content ?? "{}";
+  try {
+    const data = JSON.parse(raw);
+    return {
+      summary: String(data.summary || "").slice(0, 600),
+      snippet: String(data.snippet || "").slice(0, 140),
+      tags: Array.isArray(data.tags) ? data.tags.slice(0, 8) : []
+    };
+  } catch {
+    return { summary: raw.slice(0, 600), snippet: "", tags: [] };
+  }
+}
+
+async function insert(row) {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/articles`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      apikey: SUPABASE_SERVICE_ROLE_KEY,
+      Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+      Prefer: "return=minimal"
+    },
+    body: JSON.stringify(row)
+  });
+
+  if (res.status === 409) return false;
+  if (!res.ok) throw new Error(await res.text());
+  return true;
+}
+
+async function main() {
+  let items = [];
+  for (const q of QUERIES) items.push(...(await braveSearch(q)));
+
+  const seen = new Set();
+  items = items.filter(x => x?.url && !seen.has(x.url) && seen.add(x.url));
+
+  let inserted = 0;
+  for (const it of items.slice(0, 25)) {
+    try {
+      const { title, text } = await extract(it.url);
+      if (!text || text.length < 400) continue;
+
+      const ai = await summarize(title || it.title || it.url, text);
+
+      const ok = await insert({
+        url: it.url,
+        title: (title || it.title || it.url).slice(0, 200),
+        source: it.source,
+        summary: ai.summary,
+        snippet: ai.snippet,
+        tags: ai.tags
+      });
+
+      if (ok) inserted++;
+    } catch (e) {
+      console.log("Skip:", it.url, e?.message || e);
+    }
+  }
+
+  console.log(`Inserted ${inserted} articles`);
+}
+
+main().catch(e => {
+  console.error("FATAL:", e?.message || e);
+  process.exit(1);
+});
