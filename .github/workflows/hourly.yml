@@ -11,6 +11,13 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+ with:
+    ref: main
+    fetch-depth: 1
+    
+    -name: Show index.js lines 60-75
+  run: |
+    nl -ba index.js | sed -n '60,75p'
 
       - uses: actions/setup-node@v4
         with:
