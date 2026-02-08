@@ -10,9 +10,17 @@ const {
   SUPABASE_SERVICE_ROLE_KEY
 } = process.env;
 
+for (const [k, v] of Object.entries({
+  BRAVE_API_KEY,
+  OPENAI_API_KEY,
+  SUPABASE_URL,
+  SUPABASE_SERVICE_ROLE_KEY
+})) {
+  if (!v) throw new Error(`Missing required env var: ${k}`);
+}
+
 const openai = new OpenAI({ apiKey: OPENAI_API_KEY });
 
-// Trading card search queries
 const QUERIES = [
   "trading cards hobby news",
   "sports cards grading PSA Beckett SGC",
@@ -21,7 +29,6 @@ const QUERIES = [
   "card breaking whatnot hobby"
 ];
 
-// Search Brave
 async function braveSearch(query) {
   const url = new URL("https://api.search.brave.com/res/v1/web/search");
   url.searchParams.set("q", query);
@@ -29,7 +36,7 @@ async function braveSearch(query) {
 
   const res = await fetch(url.toString(), {
     headers: {
-      "Accept": "application/json",
+      Accept: "application/json",
       "X-Subscription-Token": BRAVE_API_KEY
     }
   });
@@ -46,7 +53,6 @@ async function braveSearch(query) {
   }));
 }
 
-// Fetch article + extract readable text
 async function fetchAndExtract(url) {
   const res = await fetch(url, {
     redirect: "follow",
@@ -63,107 +69,113 @@ async function fetchAndExtract(url) {
   const article = reader.parse();
 
   return {
-    title: article?.title || "",
-    text: article?.textContent || ""
+    title: (article?.title || "").trim(),
+    text: (article?.textContent || "").trim()
   };
 }
 
-// Ask OpenAI for summary + snippet
 async function summarize(title, text) {
   const clipped = text.slice(0, 9000);
 
   const prompt = `
-Return STRICT JSON.
+Return STRICT JSON with keys: summary, snippet, tags.
 
 summary: 1–2 neutral sentences.
-snippet: 8–15 words.
+snippet: 8–15 words (not a quote).
 tags: 3–6 short tags.
 
 Title: ${title}
 
 Article:
 ${clipped}
-`;
+`.trim();
 
   const resp = await openai.chat.completions.create({
-    model: "gpt-4.1-mini",
+    model: "gpt-4o-mini",
     temperature: 0.3,
     messages: [{ role: "user", content: prompt }]
   });
 
-  let data = {};
-  try {
-    data = JSON.parse(resp.choices[0].message.content);
-  } catch {
-    data.summary = resp.choices[0].message.content.slice(0, 300);
-    data.snippet = "";
-    data.tags = [];
-  }
+  const raw = resp?.choices?.[0]?.message?.content ?? "{}";
 
-  return data;
+  try {
+    const data = JSON.parse(raw);
+    return {
+      summary: String(data.summary || "").slice(0, 600),
+      snippet: String(data.snippet || "").slice(0, 140),
+      tags: Array.isArray(data.tags) ? data.tags.slice(0, 8) : []
+    };
+  } catch {
+    return {
+      summary: raw.slice(0, 600),
+      snippet: "",
+      tags: []
+    };
+  }
 }
 
-// Insert into Supabase
 async function insertArticle(row) {
   const res = await fetch(`${SUPABASE_URL}/rest/v1/articles`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "apikey": SUPABASE_SERVICE_ROLE_KEY,
-      "Authorization": `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
-      "Prefer": "return=minimal"
+      apikey: SUPABASE_SERVICE_ROLE_KEY,
+      Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+      Prefer: "return=minimal"
     },
     body: JSON.stringify(row)
   });
 
-  if (res.status === 409) return false; // duplicate URL
+  if (res.status === 409) return false; // duplicate url
   if (!res.ok) throw new Error(await res.text());
   return true;
 }
 
-});
-
-// Main
 async function run() {
-  let urls = [];
+  let candidates = [];
 
   for (const q of QUERIES) {
     const r = await braveSearch(q);
-    urls.push(...r);
+    candidates.push(...r);
   }
 
+  // de-dupe by URL
   const seen = new Set();
-  urls = urls.filter(u => {
-    if (!u.url || seen.has(u.url)) return false;
-    seen.add(u.url);
+  candidates = candidates.filter(c => {
+    if (!c?.url || seen.has(c.url)) return false;
+    seen.add(c.url);
     return true;
   });
 
-  let count = 0;
+  let inserted = 0;
 
-  for (const u of urls.slice(0, 25)) {
+  for (const c of candidates.slice(0, 25)) {
     try {
-      const { title, text } = await fetchAndExtract(u.url);
-      if (text.length < 400) continue;
+      const { title, text } = await fetchAndExtract(c.url);
+      if (!text || text.length < 400) continue;
 
-      const ai = await summarize(title, text);
+      const ai = await summarize(title || c.title || c.url, text);
 
       const ok = await insertArticle({
-        url: u.url,
-        title: title || u.url,
-        source: u.source,
+        url: c.url,
+        title: (title || c.title || c.url).slice(0, 200),
+        source: c.source,
         summary: ai.summary,
         snippet: ai.snippet,
         tags: ai.tags
       });
 
-      if (ok) count++;
+      if (ok) inserted++;
     } catch (e) {
-      console.log("Skip", u.url);
+      console.log("Skip:", c.url, e?.message || e);
     }
   }
 
-  console.log(`Inserted ${count} articles`);
+  console.log(`Inserted ${inserted} articles`);
 }
 
-run();
+run().catch(e => {
+  console.error("FATAL:", e?.message || e);
+  process.exit(1);
+});
+
