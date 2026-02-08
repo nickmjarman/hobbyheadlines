@@ -123,8 +123,6 @@ async function insertArticle(row) {
 
 });
 
-}
-
 // Main
 async function run() {
   let urls = [];
