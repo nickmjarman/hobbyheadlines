@@ -64,7 +64,7 @@ async function extract(url) {
 }
 
 async function summarize(title, text) {
-  const clipped = "";
+  const clip = "";
 
 
   const prompt = `Return STRICT JSON with keys summary,snippet,tags.
@@ -75,7 +75,7 @@ tags: 3-6 tags.
 Title: ${title}
 
 Article:
-${clipped}`;
+${clip}`;
 
   const resp = await openai.chat.completions.create({
     model: "gpt-4o-mini",
