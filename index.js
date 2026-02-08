@@ -64,7 +64,8 @@ async function extract(url) {
 }
 
 async function summarize(title, text) {
-  const clipped = text.slice(0, 9000);
+  const clipped = "";
+
 
   const prompt = `Return STRICT JSON with keys summary,snippet,tags.
 summary: 1-2 neutral sentences.
